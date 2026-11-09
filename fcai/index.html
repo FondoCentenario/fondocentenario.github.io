@@ -265,9 +265,8 @@ main > section[id], main > nav[id]{scroll-margin-top:96px}
 @media (max-width:420px){main > section[id], main > nav[id]{scroll-margin-top:72px}}
 nav.links a.activo{color:var(--ink);font-weight:650;text-decoration:underline;text-decoration-color:var(--lav);text-decoration-thickness:2px;text-underline-offset:8px}
 /* Pantallas: cada bloque de información ocupa una pantalla entera, sin mezclarse con el siguiente */
-html.con-pantallas{scroll-snap-type:y proximity}
 .con-pantallas .seccion-pantallas{padding-block:0!important}
-.con-pantallas .pantalla{display:flex;flex-direction:column;justify-content:center;box-sizing:border-box;padding-block:28px;scroll-snap-align:start}
+.con-pantallas .pantalla{display:flex;flex-direction:column;justify-content:center;box-sizing:border-box;padding-block:28px}
 .con-pantallas .pantalla > *{flex:none}
 </style>
 
@@ -975,7 +974,7 @@ renderMacro(MACRO_FALLBACK);
   var header=document.querySelector('header.top'), tabsF=document.querySelector('nav.tabs'), det=document.getElementById('detalle');
   var links=Array.prototype.slice.call(document.querySelectorAll('nav.links a[href^="#"]'));
   var objs=links.map(function(a){ return document.getElementById(a.getAttribute('href').slice(1)); });
-  var ZOOM_MIN=0.8;
+  var ZOOM_MIN=0.7;
   function hijos(el){ return Array.prototype.filter.call(el.children,function(c){ return c.tagName!=='SCRIPT'&&c.tagName!=='STYLE'; }); }
   function desarmar(){
     document.documentElement.classList.remove('con-pantallas');
@@ -1046,7 +1045,30 @@ renderMacro(MACRO_FALLBACK);
     objs.forEach(function(el,i){ if(!el) return; var t=el.getBoundingClientRect().top; if(t<=lim&&t>mejor){ mejor=t; k=i; } });
     links.forEach(function(a,i){ a.classList.toggle('activo',i===k); });
   }
-  window.addEventListener('scroll',function(){ if(!pend){ pend=true; requestAnimationFrame(marcar); } },{passive:true});
+  // Encuadre: al terminar de bajar con el mouse, la página se acomoda sola a la pantalla más cercana
+  var ta=null, yInicio=window.scrollY, quieto=true;
+  function alinear(){
+    if(!document.documentElement.classList.contains('con-pantallas')) return;
+    var H=header?header.offsetHeight:96, y=window.scrollY, vh=window.innerHeight, alto=vh-H;
+    var maxY=document.documentElement.scrollHeight-vh;
+    var T=[0];
+    Array.prototype.forEach.call(document.querySelectorAll('.pantalla'),function(p){
+      var extra=(det&&tabsF&&det.contains(p))?tabsF.offsetHeight:0;
+      T.push(Math.round(p.getBoundingClientRect().top+y-H-extra));
+    });
+    T.push(maxY); T=T.filter(function(t){return t>=0&&t<=maxY;}).sort(function(a,b){return a-b;});
+    for(var i=0;i<T.length-1;i++){
+      if(y>=T[i]&&y<=T[i+1]){
+        var a=T[i], b=T[i+1], gap=b-a, dest;
+        var dir=y-yInicio;
+        if(y-a<2||b-y<2||Math.abs(dir)<2) return;
+        if(gap<=alto*1.05) dest=dir>0?b:a;                                    // pantalla normal: pasa a la siguiente/anterior
+        else if(dir>0&&b-y<alto*0.35) dest=b; else if(dir<0&&y-a<alto*0.35) dest=a; else return;   // bloque largo: libre en el medio
+        window.scrollTo({top:dest,behavior:'smooth'}); return;
+      }
+    }
+  }
+  window.addEventListener('scroll',function(){ if(!pend){ pend=true; requestAnimationFrame(marcar); } if(quieto){ quieto=false; } clearTimeout(ta); ta=setTimeout(function(){ alinear(); quieto=true; yInicio=window.scrollY; },180); },{passive:true});
   var tt=null, ultimo=window.innerWidth+'x'+window.innerHeight;
   window.addEventListener('resize',function(){ clearTimeout(tt); tt=setTimeout(function(){ var t=window.innerWidth+'x'+window.innerHeight; if(t!==ultimo){ ultimo=t; armar(); } marcar(); },250); });
   if(typeof window.openFund==='function'){
