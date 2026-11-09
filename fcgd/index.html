@@ -228,12 +228,15 @@ footer p{max-width:110ch}
 .tabs{top:calc(env(safe-area-inset-top,0px) + 96px)}
 @media (max-width:860px){.top .wrap{height:80px}.brand img{height:60px}.tabs{top:calc(env(safe-area-inset-top,0px) + 80px)}}
 @media (max-width:420px){.top .wrap{height:72px}.brand img{height:52px}.tabs{top:calc(env(safe-area-inset-top,0px) + 72px)}}
-/* Menú: la página se sigue bajando con el mouse, pero al tocar una pestaña su sección ocupa la pantalla entera */
 main > section[id], main > nav[id]{scroll-margin-top:96px}
-@media (min-width:861px){main > section[id]:not(:first-child){min-height:calc(100vh - 96px);min-height:calc(100svh - 96px)}}
 @media (max-width:860px){main > section[id], main > nav[id]{scroll-margin-top:80px}}
 @media (max-width:420px){main > section[id], main > nav[id]{scroll-margin-top:72px}}
 nav.links a.activo{color:var(--ink);font-weight:650;text-decoration:underline;text-decoration-color:var(--lav);text-decoration-thickness:2px;text-underline-offset:8px}
+/* Pantallas: cada bloque de información ocupa una pantalla entera, sin mezclarse con el siguiente */
+html.con-pantallas{scroll-snap-type:y proximity}
+.con-pantallas .seccion-pantallas{padding-block:0!important}
+.con-pantallas .pantalla{display:flex;flex-direction:column;justify-content:center;box-sizing:border-box;padding-block:28px;scroll-snap-align:start}
+.con-pantallas .pantalla > *{flex:none}
 </style>
 
 <header class="top">
@@ -825,24 +828,95 @@ renderMacro(MACRO_FALLBACK);
 </script>
 
 <script id="pestanas-gletir">
-/* Marca en el menú la sección que se está viendo (pedido Gletir, nov 2026). */
+/* Pantallas y menú (pedido Gletir, nov 2026):
+   - en computadora, cada bloque de información ocupa exactamente una pantalla (si es muy largo se divide
+     en varias pantallas; si no entra por poco, se achica un poco para que entre entero);
+   - el menú marca la sección que se está viendo. En celular la página queda como siempre. */
 (function(){
+  var main=document.querySelector('main'); if(!main) return;
+  var header=document.querySelector('header.top'), tabsF=document.querySelector('nav.tabs'), det=document.getElementById('detalle');
   var links=Array.prototype.slice.call(document.querySelectorAll('nav.links a[href^="#"]'));
   var objs=links.map(function(a){ return document.getElementById(a.getAttribute('href').slice(1)); });
-  if(!links.length) return;
-  var pend=false, tabsF=document.querySelector('nav.tabs'), det=document.getElementById('detalle');
+  var ZOOM_MIN=0.8;
+  function hijos(el){ return Array.prototype.filter.call(el.children,function(c){ return c.tagName!=='SCRIPT'&&c.tagName!=='STYLE'; }); }
+  function desarmar(){
+    document.documentElement.classList.remove('con-pantallas');
+    Array.prototype.forEach.call(document.querySelectorAll('.pantalla'),function(p){
+      if(p.dataset.propia){ p.classList.remove('pantalla'); delete p.dataset.propia; p.style.minHeight=''; p.style.zoom=''; p.style.scrollMarginTop=''; return; }
+      while(p.firstChild) p.parentNode.insertBefore(p.firstChild,p); p.parentNode.removeChild(p);
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('.seccion-pantallas'),function(s){ s.classList.remove('seccion-pantallas'); });
+  }
+  function armar(){
+    desarmar();
+    if(window.innerWidth<=860||window.innerHeight<520) return;
+    document.documentElement.classList.add('con-pantallas');
+    var H=header?header.offsetHeight:96;
+    var secciones=hijos(main).filter(function(s,i){ return s.tagName==='SECTION'&&i>0&&!s.classList.contains('kpis')&&s.offsetHeight>0; });
+    secciones.forEach(function(s){
+      var extra=(s===det&&tabsF)?tabsF.offsetHeight:0;
+      var alto=window.innerHeight-H-extra, lim=alto-56;
+      s.classList.add('seccion-pantallas');
+      var w=null; hijos(s).forEach(function(c){ if(!w&&c.classList.contains('wrap')) w=c; });
+      var bloques=(w&&getComputedStyle(w).display==='block')?hijos(w):null;
+      var grupos=[];
+      if(bloques&&bloques.length>1){
+        var g=[],suma=0,sumas=[];
+        bloques.forEach(function(b){
+          var cs=getComputedStyle(b), h=b.offsetHeight?b.offsetHeight+parseFloat(cs.marginTop)+parseFloat(cs.marginBottom):0;
+          if(g.length&&h>0&&suma>0&&suma+h>lim){ grupos.push(g); sumas.push(suma); g=[]; suma=0; }
+          g.push(b); suma+=h;
+        });
+        if(g.length){ grupos.push(g); sumas.push(suma); }
+        // un bloque chico (el título de la sección, una nota al pie) nunca queda solo en una pantalla
+        for(var i=0;i<grupos.length;i++){
+          if(grupos.length>1&&sumas[i]<240){
+            var j=i===0?1:i-1;
+            grupos[j]=j<i?grupos[j].concat(grupos[i]):grupos[i].concat(grupos[j]);
+            sumas[j]+=sumas[i]; grupos.splice(i,1); sumas.splice(i,1); i=-1;
+          }
+        }
+      }
+      var pantallas=[];
+      if(grupos.length){
+        grupos.forEach(function(g){ var p=document.createElement('div'); p.className='pantalla'; g[0].parentNode.insertBefore(p,g[0]); g.forEach(function(b){ p.appendChild(b); }); pantallas.push(p); });
+      } else { s.classList.add('pantalla'); s.dataset.propia='1'; pantallas.push(s); }
+      pantallas.forEach(function(p){
+        p.style.minHeight=alto+'px'; p.style.scrollMarginTop=(H+extra)+'px';
+        var c=hijos(p).filter(function(x){return x.offsetHeight>0;});
+        if(!c.length) return;
+        var z=1;
+        for(var it=0;it<4;it++){
+          var contenido=c[c.length-1].getBoundingClientRect().bottom-c[0].getBoundingClientRect().top;   // en píxeles de pantalla
+          if(contenido<=lim+2) break;
+          var nz=Math.max(ZOOM_MIN,z*lim/contenido*0.99);
+          if(nz>=z-0.005) break;
+          z=nz; p.style.zoom=z; p.style.minHeight=(alto/z)+'px'; p.style.scrollMarginTop=((H+extra)/z)+'px';
+        }
+        // si ni achicando un poco entra, se deja en tamaño normal (se lee bajando) en vez de achicarlo demasiado
+        var fin=c[c.length-1].getBoundingClientRect().bottom-c[0].getBoundingClientRect().top;
+        if(z<1&&fin>lim+2){ p.style.zoom=''; p.style.minHeight=alto+'px'; p.style.scrollMarginTop=(H+extra)+'px'; }
+      });
+    });
+  }
+  var pend=false;
   function marcar(){
     pend=false;
-    // la barra de fondos (Detalle) queda fija solo mientras se ve el Detalle
     if(tabsF&&det) tabsF.style.position = det.getBoundingClientRect().bottom < 200 ? 'relative' : '';
-    var lim=(document.querySelector('header.top')||{offsetHeight:96}).offsetHeight+40, k=0;
-    var mejor=-1e9;
+    if(!links.length) return;
+    var lim=(header?header.offsetHeight:96)+60, k=0, mejor=-1e9;
     objs.forEach(function(el,i){ if(!el) return; var t=el.getBoundingClientRect().top; if(t<=lim&&t>mejor){ mejor=t; k=i; } });
     links.forEach(function(a,i){ a.classList.toggle('activo',i===k); });
   }
   window.addEventListener('scroll',function(){ if(!pend){ pend=true; requestAnimationFrame(marcar); } },{passive:true});
-  window.addEventListener('resize',marcar);
-  marcar();
+  var tt=null, ultimo=window.innerWidth+'x'+window.innerHeight;
+  window.addEventListener('resize',function(){ clearTimeout(tt); tt=setTimeout(function(){ var t=window.innerWidth+'x'+window.innerHeight; if(t!==ultimo){ ultimo=t; armar(); } marcar(); },250); });
+  if(typeof window.openFund==='function'){
+    var original=window.openFund;
+    window.openFund=function(){ desarmar(); var r=original.apply(this,arguments); armar(); if(arguments[1]&&tabsF) tabsF.scrollIntoView(); marcar(); return r; };
+  }
+  armar(); marcar();
+  if(location.hash){ var el=document.getElementById(location.hash.slice(1)); if(el) setTimeout(function(){ el.scrollIntoView(); },0); }
 })();
 </script>
 </body></html>
