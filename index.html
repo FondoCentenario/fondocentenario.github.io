@@ -348,8 +348,11 @@ footer p{max-width:110ch}
 .tabs{top:calc(env(safe-area-inset-top,0px) + 96px)}
 @media (max-width:860px){.top .wrap{height:80px}.brand img{height:60px}.tabs{top:calc(env(safe-area-inset-top,0px) + 80px)}}
 @media (max-width:420px){.top .wrap{height:72px}.brand img{height:52px}.tabs{top:calc(env(safe-area-inset-top,0px) + 72px)}}
-/* Pestañas: se muestra solo la sección elegida */
-.tab-oculto{display:none!important}
+/* Menú: la página se sigue bajando con el mouse, pero al tocar una pestaña su sección ocupa la pantalla entera */
+main > section[id], main > nav[id]{scroll-margin-top:96px}
+@media (min-width:861px){main > section[id]:not(:first-child){min-height:calc(100vh - 96px);min-height:calc(100svh - 96px)}}
+@media (max-width:860px){main > section[id], main > nav[id]{scroll-margin-top:80px}}
+@media (max-width:420px){main > section[id], main > nav[id]{scroll-margin-top:72px}}
 nav.links a.activo{color:var(--ink);font-weight:650;text-decoration:underline;text-decoration-color:var(--lav);text-decoration-thickness:2px;text-underline-offset:8px}
 </style>
 
@@ -1251,47 +1254,24 @@ new MutationObserver(rerender).observe(document.documentElement,{attributes:true
 </script>
 
 <script id="pestanas-gletir">
-/* Pestañas: al tocar un link del menú se muestra solo esa sección (pedido Gletir, nov 2026). */
+/* Marca en el menú la sección que se está viendo (pedido Gletir, nov 2026). */
 (function(){
-  var main=document.querySelector('main'); if(!main) return;
-  var esSitio=!!document.getElementById('comparar');
-  var G=esSitio
-    ? {fondos:'inicio',comparar:'inicio',elegir:'elegir',fondo:'fondo',detalle:'fondo',nosotros:'nosotros',distribuidores:'distribuidores',contacto:'contacto'}
-    : {rendimiento:'inicio',calculadora:'inicio',historia:'historia',inflacion:'inflacion',macro:'macro',cartera:'cartera',simulador:'simulador',invertir:'invertir',distribuidores:'invertir',documentos:'documentos',contacto:'contacto'};
-  var partes=Array.prototype.filter.call(main.children,function(el){return /^(SECTION|NAV|DIV|ASIDE)$/.test(el.tagName);});
-  function grupoDe(el){return G[el.id]||'inicio';}
-  function grupoDeId(id){
-    if(!id||id==='top') return 'inicio';
-    var el=document.getElementById(id); if(!el) return null;
-    for(var i=0;i<partes.length;i++){ if(partes[i]===el||partes[i].contains(el)) return grupoDe(partes[i]); }
-    return null;
+  var links=Array.prototype.slice.call(document.querySelectorAll('nav.links a[href^="#"]'));
+  var objs=links.map(function(a){ return document.getElementById(a.getAttribute('href').slice(1)); });
+  if(!links.length) return;
+  var pend=false, tabsF=document.querySelector('nav.tabs'), det=document.getElementById('detalle');
+  function marcar(){
+    pend=false;
+    // la barra de fondos (Detalle) queda fija solo mientras se ve el Detalle
+    if(tabsF&&det) tabsF.style.position = det.getBoundingClientRect().bottom < 200 ? 'relative' : '';
+    var lim=(document.querySelector('header.top')||{offsetHeight:96}).offsetHeight+40, k=0;
+    var mejor=-1e9;
+    objs.forEach(function(el,i){ if(!el) return; var t=el.getBoundingClientRect().top; if(t<=lim&&t>mejor){ mejor=t; k=i; } });
+    links.forEach(function(a,i){ a.classList.toggle('activo',i===k); });
   }
-  var actual=null;
-  var movil=window.matchMedia('(max-width:860px)');   // en celular no hay menú: se ve la página entera
-  function mostrar(g,destino){
-    if(movil.matches){ partes.forEach(function(p){p.classList.remove('tab-oculto');}); actual=g; return; }
-    partes.forEach(function(p){ p.classList.toggle('tab-oculto',grupoDe(p)!==g); });
-    document.querySelectorAll('nav.links a').forEach(function(a){ a.classList.toggle('activo',grupoDeId(a.getAttribute('href').slice(1))===g); });
-    actual=g;
-    var el=destino&&destino!=='top'?document.getElementById(destino):null;
-    var primero=partes.filter(function(p){return grupoDe(p)===g;})[0];
-    if(el&&primero&&el!==primero&&!primero.contains(el)) el.scrollIntoView(); else window.scrollTo(0,0);
-  }
-  document.addEventListener('click',function(e){
-    if(movil.matches) return;
-    var a=e.target.closest&&e.target.closest('a[href^="#"]'); if(!a) return;
-    var id=a.getAttribute('href').slice(1), g=grupoDeId(id); if(!g) return;
-    e.preventDefault(); mostrar(g,id);
-    try{ history.replaceState(null,'',id&&id!=='top'?'#'+id:location.pathname+location.search); }catch(_){}
-  });
-  if(typeof window.openFund==='function'){
-    var original=window.openFund;
-    window.openFund=function(k,scroll){ if(movil.matches) return original.apply(this,arguments); if(scroll||actual!=='fondo'){ mostrar('fondo'); return original.call(this,k,false); } return original.call(this,k,scroll); };
-  }
-  var h=(location.hash||'').slice(1), g0='inicio';
-  if(h){ if(esSitio&&typeof FUNDS!=='undefined'&&FUNDS[h]) g0='fondo'; else g0=grupoDeId(h)||'inicio'; }
-  mostrar(g0,h);
-  if(movil.addEventListener) movil.addEventListener('change',function(){ mostrar(actual||'inicio'); });
+  window.addEventListener('scroll',function(){ if(!pend){ pend=true; requestAnimationFrame(marcar); } },{passive:true});
+  window.addEventListener('resize',marcar);
+  marcar();
 })();
 </script>
 </body></html>
